@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import cookieParser from "cookie-parser";
 
 import { PrismaClient, User } from "@prisma/client";
 
@@ -17,11 +18,12 @@ dotenv.config();
 
 // Middleware
 app.use(cors({
-  origin: "http://localhost:5173",
-  credentials: true,
+  origin: "http://localhost:5173", // Endast vår frotend kan göra requests
+  credentials: true, // Det är ok att skicka kakor
 }));
 
 app.use(express.json());
+app.use(cookieParser()); // Kunna läsa och sätta våra cookies
 
 app.get("/", (req, res) => {
   res.send("Node.js and Express.js with TypeScript");
@@ -77,11 +79,18 @@ app.post("/sign-in", async (req, res) => {
     return;
   }
 
-  const token = createJWT(user);
-  console.log(token);
+  const JWTtoken = createJWT(user);
+  
 
-  //Set the token as a cookie
+  //Skicka vår JWT-token som en HTTPonly cookie till vår frontend
 
+  res.cookie("token", JWTtoken,
+            { 
+              httpOnly: true,
+              sameSite: "strict",
+              // maxAge: 360000, valbart. JWT kan också en en expire tid.
+            }
+   )
 
   res.json({ message: "Logged in successfully" });
 
@@ -103,15 +112,15 @@ interface ProtectedRequest extends Request {
 //Middleware to check if user is logged in
 const authMiddleware = (req: ProtectedRequest, res: Response, next: NextFunction) => {
 
-  // The token is sent from frontend as a http-only cookie
-
+  // Läsa cookies så att vi får tag i vår tooken
+  const cookieToken = req.cookies.token;
 
 // The cookie is sent with the request as a header
- const bearerToken = req.headers.authorization?.split(" ")[1];
+ //const bearerToken = req.headers.authorization?.split(" ")[1];
 
 //Bearer 342rmdflskfjsldkfk
 
-  if (!bearerToken) {
+  if (!cookieToken) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -124,7 +133,7 @@ const authMiddleware = (req: ProtectedRequest, res: Response, next: NextFunction
   //Verify token
   try {
 
-    const JwtPayload = jwt.verify(bearerToken, process.env.JWT_SECRET as string) as JwtPayload;
+    const JwtPayload = jwt.verify(cookieToken, process.env.JWT_SECRET as string) as JwtPayload;
     req.user = JwtPayload; //Add user to request object
     next();
  
@@ -138,6 +147,7 @@ const authMiddleware = (req: ProtectedRequest, res: Response, next: NextFunction
 
 }
 
+// Protected
 app.get("/dashboard", authMiddleware, (req: ProtectedRequest, res: Response) => {
   res.json({ message: "Protected route with authmiddleware. Token is valid Logged in user is: " + req.user?.email });
 });
